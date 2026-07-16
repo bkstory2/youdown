@@ -16,6 +16,7 @@ class YouTubeDownloaderApp:
         
         self.config_file = os.path.join(os.path.expanduser("~"), ".youtube_downloader_config.json")
         self.download_path = self.load_config()
+        self.ensure_output_directories()
         self.is_downloading = False
         self.current_process = None
         
@@ -44,6 +45,11 @@ class YouTubeDownloaderApp:
                 json.dump(config, f, indent=2)
         except Exception as e:
             print(f"Config 저장 오류: {e}")
+
+    def ensure_output_directories(self):
+        """선택한 폴더 아래에 MP3와 MP4 저장 폴더를 만든다."""
+        for format_type in ("mp3", "mp4"):
+            os.makedirs(os.path.join(self.download_path, format_type), exist_ok=True)
 
     def get_ffmpeg_location(self):
         """ffmpeg 실행 파일이 들어 있는 폴더를 찾는다."""
@@ -131,6 +137,7 @@ class YouTubeDownloaderApp:
         folder = filedialog.askdirectory(initialdir=self.download_path)
         if folder:
             self.download_path = folder
+            self.ensure_output_directories()
             self.folder_label.config(text=folder)
             self.save_config()
     
