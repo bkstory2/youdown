@@ -220,6 +220,9 @@ class YouTubeDownloaderApp:
                 )
 
             self.add_status(f"ffmpeg 사용 위치: {ffmpeg_location}")
+            output_directory = os.path.join(self.download_path, format_type)
+            os.makedirs(output_directory, exist_ok=True)
+            output_template = os.path.join(output_directory, "%(title)s.%(ext)s")
 
             if format_type == "mp3":
                 # MP3 추출 - 명시적으로 mp3 포맷 지정
@@ -230,7 +233,7 @@ class YouTubeDownloaderApp:
                     "-x",  # 오디오만 추출
                     "--audio-format", "mp3",
                     "--audio-quality", "0",  # 최고 품질
-                    "-o", os.path.join(self.download_path, "%(title)s.%(ext)s"),
+                    "-o", output_template,
                     url
                 ]
                 self.add_status("형식: MP3 (음악만 추출, m4a→mp3 자동 변환)")
@@ -248,12 +251,12 @@ class YouTubeDownloaderApp:
                     "--ffmpeg-location", ffmpeg_location,
                     "-f", format_str,
                     "--merge-output-format", "mp4",
-                    "-o", os.path.join(self.download_path, "%(title)s.%(ext)s"),
+                    "-o", output_template,
                     url
                 ]
                 self.add_status(f"형식: MP4 (화질: {quality}p, 오디오 포함)")
             
-            self.add_status(f"저장 위치: {self.download_path}")
+            self.add_status(f"저장 위치: {output_directory}")
             self.add_status("다운로드 중...\n")
             
             # 프로세스 실행
