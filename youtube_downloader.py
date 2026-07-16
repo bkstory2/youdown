@@ -18,7 +18,8 @@ class YouTubeDownloaderApp:
         self.download_path = self.load_config()
         self.ensure_output_directories()
         self.is_downloading = False
-        self.current_process = None
+        self.current_processes = {}
+        self.process_lock = threading.Lock()
         
         self.setup_ui()
         
@@ -182,16 +183,24 @@ class YouTubeDownloaderApp:
             download_mp4 = self.mp4_var.get()
             download_mp3 = self.mp3_var.get()
             results = {}
-            
-            # MP3 다운로드
-            if download_mp3:
-                self.add_status("\n=== MP3 음악 추출 중 ===")
-                results["MP3"] = self.download_format(url, quality, "mp3")
 
-            # MP4 다운로드
-            if download_mp4 and self.is_downloading:
-                self.add_status("\n=== MP4 동영상 다운로드 중 ===")
-                results["MP4"] = self.download_format(url, quality, "mp4")
+            def run_format(format_name):
+                self.add_status(f"\n=== {format_name} 다운로드 시작 ===")
+                results[format_name.upper()] = self.download_format(
+                    url, quality, format_name
+                )
+
+            tasks = []
+            if download_mp3:
+                tasks.append(threading.Thread(target=run_format, args=("mp3",)))
+            if download_mp4:
+                tasks.append(threading.Thread(target=run_format, args=("mp4",)))
+
+            # MP3와 MP4는 각각 별도 yt-dlp 프로세스로 동시에 실행한다.
+            for task in tasks:
+                task.start()
+            for task in tasks:
+                task.join()
 
             if not self.is_downloading:
                 self.add_status("\n⏹ 다운로드가 중지되었습니다.")
@@ -213,7 +222,8 @@ class YouTubeDownloaderApp:
         
         finally:
             self.is_downloading = False
-            self.current_process = None
+            with self.process_lock:
+                self.current_processes.clear()
             self.download_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
     
@@ -267,11 +277,15 @@ class YouTubeDownloaderApp:
             self.add_status("다운로드 중...\n")
             
             # 프로세스 실행
-            self.current_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            with self.process_lock:
+                self.current_processes[format_type] = process
             
-            for line in self.current_process.stdout:
+            for line in process.stdout:
                 if not self.is_downloading:
-                    self.current_process.terminate()
+                    process.terminate()
                     return False
                 line = line.strip()
                 if line:
@@ -284,9 +298,9 @@ class YouTubeDownloaderApp:
                         except:
                             pass
             
-            self.current_process.wait()
+            process.wait()
             
-            if self.current_process.returncode == 0:
+            if process.returncode == 0:
                 self.add_status(f"✓ {format_type.upper()} 다운로드 완료!")
                 return True
             else:
@@ -302,16 +316,22 @@ class YouTubeDownloaderApp:
         except Exception as e:
             self.add_status(f"\n✗ 오류 발생: {str(e)}")
             return False
+        finally:
+            with self.process_lock:
+                self.current_processes.pop(format_type, None)
     
     def stop_download(self):
-        if self.is_downloading and self.current_process:
+        if self.is_downloading:
             self.is_downloading = False
             self.add_status("\n⏹ 다운로드 중지 중...")
-            try:
-                self.current_process.terminate()
-                self.current_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.current_process.kill()
+            with self.process_lock:
+                processes = list(self.current_processes.values())
+            for process in processes:
+                try:
+                    process.terminate()
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
             messagebox.showinfo("알림", "다운로드가 중지되었습니다.")
     
     def reset_all(self):
